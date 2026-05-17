@@ -306,6 +306,120 @@ def _ensure_projects_schema() -> None:
     with conn() as c:
         c.executescript(PROJECTS_SCHEMA)
     _ensure_learning_schema()
+    _ensure_reports_pg_schema()
+
+
+# =============================================================================
+# Reports → Postgres (read by critterlabs.io Next.js admin)
+# =============================================================================
+# Cloud-deployed Streamlit's disk is ephemeral — markdown reports written to
+# /reports/ vanish whenever the container restarts. Mirroring them to Supabase
+# Postgres gives them a permanent home AND lets the Next.js admin read them
+# in the Peek modal / Reports lens.
+
+_REPORTS_PG_SCHEMA = """
+CREATE TABLE IF NOT EXISTS reports (
+    id            BIGSERIAL PRIMARY KEY,
+    project_slug  TEXT NOT NULL,
+    filename      TEXT NOT NULL,
+    title         TEXT,
+    body          TEXT NOT NULL,
+    template      TEXT,
+    author        TEXT,
+    health_score  INTEGER,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_reports_project_slug ON reports (project_slug);
+CREATE INDEX IF NOT EXISTS idx_reports_created_at  ON reports (created_at DESC);
+
+CREATE TABLE IF NOT EXISTS cost_log (
+    id              BIGSERIAL PRIMARY KEY,
+    project_slug    TEXT,
+    agent           TEXT NOT NULL,
+    model           TEXT NOT NULL,
+    input_tokens    INTEGER NOT NULL DEFAULT 0,
+    output_tokens   INTEGER NOT NULL DEFAULT 0,
+    cost_usd        NUMERIC(10, 6) NOT NULL DEFAULT 0,
+    run_id          TEXT,
+    prompt_label    TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_cost_log_project_slug ON cost_log (project_slug);
+CREATE INDEX IF NOT EXISTS idx_cost_log_created_at  ON cost_log (created_at DESC);
+"""
+
+
+def _ensure_reports_pg_schema() -> None:
+    """Idempotent. No-ops if SUPABASE_DATABASE_URL isn't set (local-only dev)."""
+    if not _USE_PG_FOR_PROJECTS:
+        return
+    try:
+        with _pg_conn() as c:
+            with c.cursor() as cur:
+                cur.execute(_REPORTS_PG_SCHEMA)
+    except Exception as e:
+        # Don't crash the app if Postgres is unreachable at boot.
+        print(f"[reports/cost schema] skipped: {e}")
+
+
+def save_cost_to_pg(
+    project_slug: str | None,
+    agent: str,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    cost_usd: float,
+    run_id: str = "",
+    prompt_label: str = "",
+) -> None:
+    """Mirror a single cost_log entry to Postgres. Best-effort — failures
+    are logged but never interrupt the SQLite write that already happened."""
+    if not _USE_PG_FOR_PROJECTS:
+        return
+    try:
+        with _pg_conn() as c:
+            with c.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO cost_log
+                        (project_slug, agent, model, input_tokens, output_tokens,
+                         cost_usd, run_id, prompt_label)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (project_slug, agent, model, input_tokens, output_tokens,
+                     cost_usd, run_id, prompt_label),
+                )
+    except Exception as e:
+        print(f"[save_cost_to_pg] {agent}/{model}: {e}")
+
+
+def save_report_to_pg(
+    project_slug: str,
+    filename: str,
+    body: str,
+    title: str | None = None,
+    template: str | None = None,
+    author: str | None = None,
+    health_score: int | None = None,
+) -> None:
+    """Persist a generated report's markdown to Supabase so the Next.js admin
+    can render it. No-ops if Postgres isn't configured. Best-effort — any
+    failure is logged but does not interrupt the caller."""
+    if not _USE_PG_FOR_PROJECTS:
+        return
+    try:
+        with _pg_conn() as c:
+            with c.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO reports
+                        (project_slug, filename, title, body, template, author, health_score)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (project_slug, filename, title, body, template, author, health_score),
+                )
+    except Exception as e:
+        print(f"[save_report_to_pg] {filename}: {e}")
 
 
 # Sprint 6 — Smarter-over-time wiring: per-agent notes, rejection log,
@@ -1075,6 +1189,27 @@ def log_cost(agent: str, model: str, input_tokens: int, output_tokens: int,
             (dt.datetime.utcnow().isoformat(timespec="seconds") + "Z",
              agent, run_id, model, input_tokens, output_tokens, cost, prompt_label, pid),
         )
+
+    # Mirror to Postgres so the Next.js admin's right-rail Today's-Bill is
+    # real (and so cost history survives Streamlit Cloud container restarts).
+    # Best-effort — never fails the SQLite write.
+    try:
+        slug = None
+        if pid is not None:
+            proj = get_project(pid)
+            if proj:
+                slug = proj.get("slug")
+        save_cost_to_pg(
+            project_slug=slug,
+            agent=agent, model=model,
+            input_tokens=input_tokens, output_tokens=output_tokens,
+            cost_usd=cost,
+            run_id=run_id, prompt_label=prompt_label,
+        )
+    except Exception as _pg_err:
+        # Already swallowed inside save_cost_to_pg, but belt-and-suspenders.
+        pass
+
     return cost
 
 

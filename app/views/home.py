@@ -496,6 +496,31 @@ def _run_crew(prompt: str):
         st.download_button("⬇️ Download Markdown", data=body,
                            file_name=out_path.name, mime="text/markdown")
 
+        # Sprint 4-cleanup — mirror to Supabase so the Next.js admin can
+        # read recent reports in the Peek modal. Best-effort: failures
+        # don't interrupt the local-disk save.
+        try:
+            from app.db import save_report_to_pg, active_project
+            active = active_project() or {}
+            slug = active.get("slug") or "stoptions"
+            title = prompt[:120] if prompt else None
+            template = (
+                "daily-health-check" if "daily" in (prompt or "").lower() and "health" in (prompt or "").lower()
+                else "weekly-full-audit" if "weekly" in (prompt or "").lower() and "audit" in (prompt or "").lower()
+                else None
+            )
+            save_report_to_pg(
+                project_slug=slug,
+                filename=out_path.name,
+                body=body,
+                title=title,
+                template=template,
+                author="Cash",  # analyst owns the report by convention
+            )
+        except Exception as _pg_err:
+            # Surface only as a soft caption; local save already succeeded.
+            st.caption(f"(Postgres mirror skipped: {_pg_err})")
+
     # Persist a compact summary to chat history
     summary_md = ""
     if final_state.get("analyst_report"):
