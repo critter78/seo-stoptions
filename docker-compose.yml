@@ -1,0 +1,23 @@
+services:
+  seo-crew:
+    build: .
+    image: stoptions-ai/seo-crew:latest
+    container_name: stoptions-ai-seo-crew
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    volumes:
+      # Persist generated reports on the host
+      - ./reports:/app/reports
+      # Persist SQLite (rank history + schedules)
+      - ./data:/app/data
+      # Optional: mount a service-account JSON for GSC if you use one
+      # - ./gsc-service-account.json:/secrets/gsc.json:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3

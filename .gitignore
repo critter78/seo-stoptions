@@ -1,0 +1,30 @@
+.env
+.env.*
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.streamlit/secrets.toml
+
+# Reports — generated outputs, don't commit
+reports/*.md
+reports/**/*.md
+!reports/.gitkeep
+
+# Local SQLite DB — Postgres is source of truth in prod
+data/
+!data/.gitkeep
+
+# CRITICAL: never commit OAuth tokens or service-account JSON
+secrets/
+*.token.json
+*-service-account*.json
+
+# Editor / OS
+.DS_Store
+*.log
+*.swp
+.vscode/
+.idea/
