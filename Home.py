@@ -20,11 +20,32 @@ from app.config import (
 
 
 # =============================================================================
-# Sprint 7 follow-up: simple password gate when deployed publicly.
-# Set APP_PASSWORD in Streamlit Cloud secrets (or .env locally). If unset,
-# the gate is bypassed entirely — local dev stays frictionless.
+# Sprint 7 follow-up: on Streamlit Cloud, bridge st.secrets into os.environ so
+# the existing config code (os.getenv everywhere) works without modification.
+# Local dev keeps reading from .env — st.secrets is empty there, no overrides.
 # =============================================================================
-_APP_PASSWORD = os.getenv("APP_PASSWORD", "") or st.secrets.get("APP_PASSWORD", "") if hasattr(st, "secrets") else os.getenv("APP_PASSWORD", "")
+try:
+    for _k, _v in dict(st.secrets).items():
+        if isinstance(_v, (str, int, float)) and not os.environ.get(_k):
+            os.environ[_k] = str(_v)
+except Exception:
+    # No secrets.toml locally — that's normal
+    pass
+
+# =============================================================================
+# Simple password gate when deployed publicly. Set APP_PASSWORD in Streamlit
+# Cloud secrets (or .env locally). If unset, the gate is bypassed — local dev
+# stays frictionless.
+# =============================================================================
+_APP_PASSWORD = os.getenv("APP_PASSWORD", "")
+if not _APP_PASSWORD:
+    # st.secrets only works when a secrets.toml exists or we're on Streamlit
+    # Cloud. Touching it without a secrets file raises StreamlitSecretNotFoundError,
+    # so guard with try/except.
+    try:
+        _APP_PASSWORD = st.secrets.get("APP_PASSWORD", "") or ""
+    except Exception:
+        _APP_PASSWORD = ""
 if _APP_PASSWORD:
     if st.session_state.get("_authed") != _APP_PASSWORD:
         st.set_page_config(page_title="🔒 Critter Labs", layout="centered")
