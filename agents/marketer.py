@@ -36,3 +36,20 @@ def build_marketer_agent():
         prompt=_full_prompt(),
         name=MAYA.key,
     )
+
+
+def run_marketer(user_prompt: str) -> str:
+    """One-shot Maya invocation — used by the 1:1 chat view."""
+    from langchain_core.messages import HumanMessage, AIMessage
+    agent = build_marketer_agent()
+    out = agent.invoke({"messages": [HumanMessage(content=user_prompt)]})
+    for m in reversed(out.get("messages", [])):
+        if isinstance(m, AIMessage):
+            content = m.content
+            if isinstance(content, list):
+                return "\n".join(
+                    c.get("text", "") for c in content
+                    if isinstance(c, dict) and c.get("type") == "text"
+                ).strip()
+            return (content or "").strip()
+    return ""

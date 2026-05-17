@@ -358,6 +358,9 @@ schema = st.Page("app/views/schema.py", title="Schema Validator", icon="🧬")
 content = st.Page("app/views/content.py", title="Content Calendar", icon="📝")
 outreach = st.Page("app/views/outreach.py", title="Outreach", icon="📬")
 the_crew = st.Page("app/views/the_crew.py", title="The Crew", icon="👥")
+kira = st.Page("app/views/kira.py", title='Kira "Recon"', icon="🔎")
+cassius = st.Page("app/views/cassius.py", title='Cassius "Cash"', icon="🧠")
+maya = st.Page("app/views/maya.py", title="Maya", icon="📣")
 pm = st.Page("app/views/pm.py", title="PM (Linz)", icon="📋")
 scheduled_runs = st.Page("app/views/scheduled_runs.py", title="Scheduled Runs", icon="⏰")
 logs = st.Page("app/views/logs.py", title="Logs", icon="📜")
@@ -372,7 +375,7 @@ nav = st.navigation(
         "Dashboard": [home],
         "SEO ops": [past_reports, rank_tracker, decisions, aeo, schema],
         "Marketing": [content, outreach],
-        "Team": [the_crew, pm, notebooks],
+        "Team": [the_crew, kira, cassius, maya, pm, notebooks],
         "Automation": [scheduled_runs, logs],
         "Toolkit": [tools],
         "Settings": [projects, cost, setup, project_context],
