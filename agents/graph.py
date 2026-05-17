@@ -82,8 +82,11 @@ def _researcher_node(state: CrewState) -> CrewState:
     out = agent.invoke({"messages": state["messages"]})
     new_msgs = out["messages"]
     findings = _last_ai_text(new_msgs)
-    # Re-tag as a system note so the next agent sees clean context.
-    handoff = SystemMessage(
+    # Use AIMessage (not SystemMessage) for inter-agent handoffs. ReAct sub-
+    # agents prepend their OWN SystemMessage at index 0 when invoked, so any
+    # SystemMessage appearing later in the message list would be "non-
+    # consecutive" and Anthropic's API rejects the whole request.
+    handoff = AIMessage(
         content=f"## Research findings (from SEO Researcher)\n\n{findings}"
     )
     return {
@@ -104,7 +107,9 @@ def _analyst_node(state: CrewState) -> CrewState:
     ]
     out = agent.invoke({"messages": msgs})
     report = _last_ai_text(out["messages"])
-    handoff = SystemMessage(content=f"## Analyst report (from Technical SEO Analyst)\n\n{report}")
+    # AIMessage handoff (see note in _researcher_node) — SystemMessage here
+    # triggers Anthropic's "non-consecutive system messages" error.
+    handoff = AIMessage(content=f"## Analyst report (from Technical SEO Analyst)\n\n{report}")
     return {
         "messages": [handoff],
         "analyst_report": report,
